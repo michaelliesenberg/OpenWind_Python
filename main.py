@@ -1,6 +1,7 @@
 import socket
 import time
 import asyncio
+import re
 from bleak import BleakClient
 from bleak import BleakScanner
 from bleak.backends.device import BLEDevice
@@ -12,15 +13,12 @@ sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 NMEA0183_Sentences = ""
 fw_number = None
 
-def socket():
-    while True:
-        time.sleep(1)
+def socket(msg):
+    try:
+        sock.sendto(bytes(msg, "utf-8"), (UDP_IP, UDP_PORT))
 
-        try:
-            sock.sendto(bytes(NMEA0183_Sentences, "utf-8"), (UDP_IP, UDP_PORT))
-
-        except (socket.timeout, ConnectionRefusedError):
-            sock.close()
+    except (socket.timeout, ConnectionRefusedError):
+        sock.close()
 
 
 OPENWIND_WIND_CHARACTERISTIC_UUID = '0000cc91-0000-1000-8000-00805f9b34fb'
@@ -32,15 +30,26 @@ deviceFound = False
 deviceAddress = None
 deviceConnected = False
 
-def simple_callback(device: BLEDevice, advertisement_data: AdvertisementData):
-    global deviceFound
-    global deviceAddress
-    print(device.address, "RSSI:", device.rssi, advertisement_data)
+def checksum( msg ):
 
-    if device.name == "OpenWind":
-        print("Found OpenWind")
-        deviceFound=True
-        deviceAddress = device.address
+    # Find the start of the NMEA sentence
+    startchars = "!$"
+    for c in startchars:
+        i = msg.find(c)
+        if i >= 0: break
+    else:
+        return (False, None, None)
+
+    # Calculate the checksum on the message
+    sum1 = 0
+    for c in msg[i+1:]:
+        if c == '*':
+            break
+        sum1 = sum1 ^ ord(c)
+
+    sum1 = sum1 & 0xFF
+
+    return '{:x}'.format(int(sum1))
 
 def WIND_DATA_CALLBACK(sender, data):
 
@@ -50,6 +59,12 @@ def WIND_DATA_CALLBACK(sender, data):
     AWS = float((data[4] << 8) | data[3]) * 0.01  # kts
 
     print("AWA: " + "{:3.1f}".format(AWA) + " AWS: " + "{:3.1f}".format(AWS))
+
+    NMEA0183_WIND_Sentece = "$WIMWV," + "{:3.1f}".format(AWA) + ",R," + "{:3.1f}".format(AWS) + ",N,A*"
+    cs = checksum(NMEA0183_WIND_Sentece)
+    NMEA0183_WIND_Sentece = NMEA0183_WIND_Sentece + str(cs) + "\n"
+    print(NMEA0183_WIND_Sentece)
+    socket(NMEA0183_WIND_Sentece)
 
     #Only if Firmware Version is same or above 1.25
     if float(fw_number) >= 1.25:
@@ -64,11 +79,21 @@ def WIND_DATA_CALLBACK(sender, data):
         if PITCH < 0:
             PITCH = PITCH * -1
 
-        if PITCH  >= 180:
+        if PITCH >= 180:
             PITCH = 360 - PITCH
 
 
         print("YAW: " + "{:3.1f}".format(YAW) + " PITCH: " + "{:3.1f}".format(PITCH) + " ROLL: " + "{:3.1f}".format(ROLL) + " CALIBRATION: " + str(CALIBRATION))
+
+def simple_callback(device: BLEDevice, advertisement_data: AdvertisementData):
+    global deviceFound
+    global deviceAddress
+    print(device.address, "RSSI:", device.rssi, advertisement_data)
+
+    if device.name == "OpenWind":
+        print("Found OpenWind")
+        deviceFound=True
+        deviceAddress = device.address
 
 def OW_DISCONNECT_CALLBACK(client):
     global deviceConnected
@@ -107,13 +132,17 @@ async def run():
         print("Model Number: {0}".format("".join(map(chr, sn_number))))
         print("Model Number: {0}".format(sn_number.hex()))
 
-        await client.start_notify(OPENWIND_WIND_CHARACTERISTIC_UUID, WIND_DATA_CALLBACK)
-        await asyncio.sleep(5.0)
+        client.set_disconnected_callback(OW_DISCONNECT_CALLBACK)
+
         write_value = bytearray([0x2C])
         await client.write_gatt_char(OPENWIND_MOV_ENABLE_CHARACTERISTIC_UUID, write_value)
-        await asyncio.sleep(5.0)
+        await asyncio.sleep(1.0)
+        await client.start_notify(OPENWIND_WIND_CHARACTERISTIC_UUID, WIND_DATA_CALLBACK)
 
-        client.set_disconnected_callback(OW_DISCONNECT_CALLBACK)
+        while await client.is_connected():
+            await asyncio.sleep(5.0)
+
+
 
 
 
@@ -125,7 +154,6 @@ if __name__ == "__main__":
         print("waiting...")
         time.sleep(5)
 
-        #if client_connection is not None: not await client_connection.is_connected() or not
-        if deviceConnected:
+        if not deviceConnected:
             loop.run_until_complete(run())
 
