@@ -1,10 +1,11 @@
 Python Script to connect with OpenWind
 
 
-Package dependencies:
+Install Package dependencies:
 
+```
 pip3 install bleak
-
+```
 
 Clone this repository on our raspberry pi:
 
