@@ -4,7 +4,7 @@ Python Script to connect with OpenWind
 Install Package dependencies:
 
 ```
-pip3 install bleak
+python3 -m pip install bleak service_identity
 ```
 
 Clone this repository on our raspberry pi:
