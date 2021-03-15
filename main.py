@@ -2,6 +2,7 @@ import socket
 import time
 import asyncio
 import re
+import numpy as np
 from bleak import BleakClient
 from bleak import BleakScanner
 from bleak.backends.device import BLEDevice
@@ -69,18 +70,15 @@ def WIND_DATA_CALLBACK(sender, data):
     #Only if Firmware Version is same or above 1.25
     if float(fw_number) >= 1.25:
         YAW = float((data[6] << 8) | data[5]) * 1/16 -90 #°
-        PITCH = float((data[8] << 8) | data[7]) * 1 / 16  * -1 # °
-        ROLL = float((data[10] << 8) | data[9]) * 1 / 16  * -1# °
+        ROLL = float(np.int16((data[8] << 8) | data[7])) * 1 / 16  * -1# °
+        PITCH = float(np.int16((data[10] << 8) | data[9])) * 1 / 16  # °
         CALIBRATION = data[11] # %
 
         if YAW < 0:
             YAW = 360 + YAW
 
-        if PITCH < 0:
-            PITCH = PITCH * -1
-
-        if PITCH >= 180:
-            PITCH = 360 - PITCH
+        if ROLL >= 180:
+            ROLL = ROLL - 360
 
 
         print("YAW: " + "{:3.1f}".format(YAW) + " PITCH: " + "{:3.1f}".format(PITCH) + " ROLL: " + "{:3.1f}".format(ROLL) + " CALIBRATION: " + str(CALIBRATION))
@@ -129,8 +127,11 @@ async def run():
         print("Model Number: {0}".format("".join(map(chr, fw_number))))
 
         sn_number = await client.read_gatt_char(OPENWIND_SN_CHARACTERISTIC_UUID)
-        print("Model Number: {0}".format("".join(map(chr, sn_number))))
-        print("Model Number: {0}".format(sn_number.hex()))
+
+        if float(fw_number) >= 1.27:
+            print("Model Number: {0}".format(sn_number.hex()))
+        else:
+            print("Model Number: {0}".format("".join(map(chr, sn_number))))
 
         client.set_disconnected_callback(OW_DISCONNECT_CALLBACK)
 
