@@ -18,5 +18,5 @@ Than change directory and run:
 ```
 cd OpenWind_Python
 
-python3 main.py
+python3 openwind.py
 ```

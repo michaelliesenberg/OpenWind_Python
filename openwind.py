@@ -14,6 +14,13 @@ sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 NMEA0183_Sentences = ""
 fw_number = None
 
+AWA=0
+AWS=0
+YAW=0
+PITCH=0
+ROLL=0
+CALIBRATE_STATUS=0
+
 def socket(msg):
     try:
         sock.sendto(bytes(msg, "utf-8"), (UDP_IP, UDP_PORT))
@@ -55,6 +62,12 @@ def checksum( msg ):
 def WIND_DATA_CALLBACK(sender, data):
 
     global fw_number
+    global AWA
+    global AWS
+    global YAW
+    global PITCH
+    global ROLL
+    global CALIBRATE_STATUS
 
     AWA = float((data[2] << 8) | data[1]) * 0.1  # °
     AWS = float((data[4] << 8) | data[3]) * 0.01  # kts
@@ -72,7 +85,7 @@ def WIND_DATA_CALLBACK(sender, data):
         YAW = float((data[6] << 8) | data[5]) * 1/16 -90 #°
         ROLL = float(np.int16((data[8] << 8) | data[7])) * 1 / 16  * -1# °
         PITCH = float(np.int16((data[10] << 8) | data[9])) * 1 / 16  # °
-        CALIBRATION = data[11] # %
+        CALIBRATE_STATUS = data[11] # %
 
         if YAW < 0:
             YAW = 360 + YAW
@@ -81,7 +94,10 @@ def WIND_DATA_CALLBACK(sender, data):
             ROLL = ROLL - 360
 
 
-        print("YAW: " + "{:3.1f}".format(YAW) + " PITCH: " + "{:3.1f}".format(PITCH) + " ROLL: " + "{:3.1f}".format(ROLL) + " CALIBRATION: " + str(CALIBRATION))
+        print("YAW: " + "{:3.1f}".format(YAW) + " PITCH: " + "{:3.1f}".format(PITCH) + " ROLL: " + "{:3.1f}".format(ROLL) + " CALIBRATION: " + str(CALIBRATE_STATUS))
+
+def ManufacturerData(data):
+    print
 
 def simple_callback(device: BLEDevice, advertisement_data: AdvertisementData):
     global deviceFound
