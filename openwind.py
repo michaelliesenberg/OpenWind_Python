@@ -11,15 +11,21 @@ from bleak.backends.scanner import AdvertisementData
 UDP_IP = "127.0.0.1"
 UDP_PORT = 2000
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+
+
 NMEA0183_Sentences = ""
 fw_number = None
 
-AWA=0
-AWS=0
-YAW=0
-PITCH=0
-ROLL=0
-CALIBRATE_STATUS=0
+AWA = 0
+AWS = 0
+YAW = 0
+PITCH = 0
+ROLL = 0
+CALIBRATE_STATUS = 0
+HDM_SIGNALK = 0
+
+
 
 def socket(msg):
     try:
@@ -93,8 +99,18 @@ def WIND_DATA_CALLBACK(sender, data):
         if ROLL >= 180:
             ROLL = ROLL - 360
 
-
         print("YAW: " + "{:3.1f}".format(YAW) + " PITCH: " + "{:3.1f}".format(PITCH) + " ROLL: " + "{:3.1f}".format(ROLL) + " CALIBRATION: " + str(CALIBRATE_STATUS))
+
+
+
+
+        NMEA0183_HEADING_Sentece = "$WIHDM," + "{:3.1f}".format(YAW) + ",M*"
+        cs = checksum(NMEA0183_HEADING_Sentece)
+        NMEA0183_HEADING_Sentece = NMEA0183_HEADING_Sentece + str(cs) + "\n"
+        print(NMEA0183_HEADING_Sentece)
+        socket(NMEA0183_HEADING_Sentece)
+
+
 
 def ManufacturerData(data):
     print
@@ -157,20 +173,22 @@ async def run():
         await client.start_notify(OPENWIND_WIND_CHARACTERISTIC_UUID, WIND_DATA_CALLBACK)
 
         while await client.is_connected():
-            await asyncio.sleep(5.0)
+            await asyncio.sleep(1.0)
 
-
-
-
-
-if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(run())
-
+def main():
     while True:
-        print("waiting...")
-        time.sleep(5)
-
-        if not deviceConnected:
+        try:
+            loop = asyncio.get_event_loop()
             loop.run_until_complete(run())
 
+            while True:
+                print("waiting...")
+                time.sleep(5)
+
+                if not deviceConnected:
+                    loop.run_until_complete(run())
+        except:
+            print("something wrong but lets try again...")
+
+if __name__ == "__main__":
+    main()
