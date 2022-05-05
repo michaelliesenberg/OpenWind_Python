@@ -81,8 +81,8 @@ def WIND_DATA_CALLBACK(sender, data):
     print("AWA: " + "{:3.1f}".format(AWA) + " AWS: " + "{:3.1f}".format(AWS))
 
     NMEA0183_WIND_Sentece = "$WIMWV," + "{:3.1f}".format(AWA) + ",R," + "{:3.1f}".format(AWS) + ",N,A*"
-    cs = checksum(NMEA0183_WIND_Sentece)
-    NMEA0183_WIND_Sentece = NMEA0183_WIND_Sentece + str(cs) + "\n"
+    cs = str(checksum(NMEA0183_WIND_Sentece))
+    NMEA0183_WIND_Sentece = NMEA0183_WIND_Sentece + cs.rjust(2, '0') + "\n"
     print(NMEA0183_WIND_Sentece)
     socket(NMEA0183_WIND_Sentece)
 
