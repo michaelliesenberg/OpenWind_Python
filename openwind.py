@@ -101,12 +101,9 @@ def WIND_DATA_CALLBACK(sender, data):
 
         print("YAW: " + "{:3.1f}".format(YAW) + " PITCH: " + "{:3.1f}".format(PITCH) + " ROLL: " + "{:3.1f}".format(ROLL) + " CALIBRATION: " + str(CALIBRATE_STATUS))
 
-
-
-
         NMEA0183_HEADING_Sentece = "$WIHDM," + "{:3.1f}".format(YAW) + ",M*"
-        cs = checksum(NMEA0183_HEADING_Sentece)
-        NMEA0183_HEADING_Sentece = NMEA0183_HEADING_Sentece + str(cs) + "\n"
+        cs = str(checksum(NMEA0183_HEADING_Sentece))
+        NMEA0183_HEADING_Sentece = NMEA0183_HEADING_Sentece + cs.rjust(2, '0') + "\n"
         print(NMEA0183_HEADING_Sentece)
         socket(NMEA0183_HEADING_Sentece)
 
