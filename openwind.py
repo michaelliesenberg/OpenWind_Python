@@ -27,7 +27,7 @@ HDM_SIGNALK = 0
 
 
 
-def socket(msg):
+def send_udp(msg):
     try:
         sock.sendto(bytes(msg, "utf-8"), (UDP_IP, UDP_PORT))
 
@@ -65,6 +65,12 @@ def checksum( msg ):
 
     return '{:x}'.format(int(sum1))
 
+def int16_from_bytes(high_byte, low_byte):
+    value = (high_byte << 8) | low_byte
+    if value >= 0x8000:  # if sign bit set
+        value -= 0x10000
+    return value
+
 def WIND_DATA_CALLBACK(sender, data):
 
     global fw_number
@@ -84,28 +90,28 @@ def WIND_DATA_CALLBACK(sender, data):
     cs = str(checksum(NMEA0183_WIND_Sentece))
     NMEA0183_WIND_Sentece = NMEA0183_WIND_Sentece + cs.rjust(2, '0') + "\n"
     print(NMEA0183_WIND_Sentece)
-    socket(NMEA0183_WIND_Sentece)
+    send_udp(NMEA0183_WIND_Sentece)
 
     #Only if Firmware Version is same or above 1.25
     if float(fw_number) >= 1.25:
-        YAW = float((data[6] << 8) | data[5]) * 1/16 -90 #°
-        ROLL = float(np.int16((data[8] << 8) | data[7])) * 1 / 16  * -1# °
-        PITCH = float(np.int16((data[10] << 8) | data[9])) * 1 / 16  # °
-        CALIBRATE_STATUS = data[11] # %
+        YAW = ((data[6] << 8) | data[5]) * 1 / 16 - 90
+
+        ROLL = int16_from_bytes(data[8], data[7]) * 1 / 16 * -1
+        PITCH = int16_from_bytes(data[10], data[9]) * 1 / 16
+        CALIBRATE_STATUS = data[11]
 
         if YAW < 0:
             YAW = 360 + YAW
 
         if ROLL >= 180:
             ROLL = ROLL - 360
-
         print("YAW: " + "{:3.1f}".format(YAW) + " PITCH: " + "{:3.1f}".format(PITCH) + " ROLL: " + "{:3.1f}".format(ROLL) + " CALIBRATION: " + str(CALIBRATE_STATUS))
 
         NMEA0183_HEADING_Sentece = "$WIHDM," + "{:3.1f}".format(YAW) + ",M*"
         cs = str(checksum(NMEA0183_HEADING_Sentece))
         NMEA0183_HEADING_Sentece = NMEA0183_HEADING_Sentece + cs.rjust(2, '0') + "\n"
         print(NMEA0183_HEADING_Sentece)
-        socket(NMEA0183_HEADING_Sentece)
+        send_udp(NMEA0183_HEADING_Sentece)
 
 
 
@@ -113,13 +119,14 @@ def ManufacturerData(data):
     print
 
 def simple_callback(device: BLEDevice, advertisement_data: AdvertisementData):
-    global deviceFound
-    global deviceAddress
-    print(device.address, "RSSI:", device.rssi, advertisement_data)
+    global deviceFound, deviceAddress
+
+    rssi = advertisement_data.rssi
+    print(device.address, "RSSI:", rssi)
 
     if device.name == "OpenWind":
         print("Found OpenWind")
-        deviceFound=True
+        deviceFound = True
         deviceAddress = device.address
 
 def OW_DISCONNECT_CALLBACK(client):
@@ -134,8 +141,8 @@ async def run():
     global deviceConnected
     global fw_number
 
-    scanner = BleakScanner()
-    scanner.register_detection_callback(simple_callback)
+    # Register callback using modern Bleak API
+    scanner = BleakScanner(detection_callback=simple_callback)
 
     while True:
         await scanner.start()
@@ -144,48 +151,54 @@ async def run():
         if deviceFound:
             deviceFound = False
             break
+    client = BleakClient(deviceAddress, disconnected_callback=OW_DISCONNECT_CALLBACK)
 
-    async with BleakClient(deviceAddress) as client:
+    async with client:
 
         deviceConnected = True
-        svcs = await client.get_services()
         print("Services:")
-        for service in svcs:
+        for service in (client.services or []):
             print(service)
+
         fw_number = await client.read_gatt_char(OPENWIND_FW_CHARACTERISTIC_UUID)
-        print("Model Number: {0}".format("".join(map(chr, fw_number))))
+        print("Firmware Version: {0}".format("".join(map(chr, fw_number))))
 
         sn_number = await client.read_gatt_char(OPENWIND_SN_CHARACTERISTIC_UUID)
 
         if float(fw_number) >= 1.27:
-            print("Model Number: {0}".format(sn_number.hex()))
+            print("Model Number (hex): {0}".format(sn_number.hex()))
         else:
             print("Model Number: {0}".format("".join(map(chr, sn_number))))
 
-        client.set_disconnected_callback(OW_DISCONNECT_CALLBACK)
 
         write_value = bytearray([0x2C])
         await client.write_gatt_char(OPENWIND_MOV_ENABLE_CHARACTERISTIC_UUID, write_value)
         await asyncio.sleep(1.0)
         await client.start_notify(OPENWIND_WIND_CHARACTERISTIC_UUID, WIND_DATA_CALLBACK)
 
-        while await client.is_connected():
+        while client.is_connected:
             await asyncio.sleep(1.0)
+
 
 def main():
     while True:
         try:
-            loop = asyncio.get_event_loop()
-            loop.run_until_complete(run())
+            asyncio.run(run())
 
+            # Reconnect loop
             while True:
                 print("waiting...")
                 time.sleep(5)
+                if not deviceConnected:  # <- no parentheses
+                    asyncio.run(run())
 
-                if not deviceConnected:
-                    loop.run_until_complete(run())
-        except:
-            print("something wrong but lets try again...")
+        except KeyboardInterrupt:
+            print("\nStopping...")
+            break
+
+        except Exception as e:
+            print("Something went wrong, retrying...", e)
+            time.sleep(1)
 
 if __name__ == "__main__":
     main()
